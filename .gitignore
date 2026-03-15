@@ -1,0 +1,12 @@
+# Environment
+.env
+.venv/
+__pycache__/
+
+# IDE
+.cursor/
+
+# Generated / runtime
+*.db
+notifications_sent.json
+.pytest_cache/

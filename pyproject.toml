@@ -1,0 +1,26 @@
+[project]
+name = "mcp-db-server"
+version = "0.1.0"
+description = "MCP server for invoice database"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "langchain-mcp-adapters>=0.1.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (require API keys, network)",
+]
+# Exclude integration tests by default - run with: pytest -m integration
+addopts = "-m 'not integration'"
