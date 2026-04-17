@@ -8,10 +8,29 @@ MCP server exposing invoice database tools for use with Cursor and other MCP cli
 uv sync
 ```
 
+## Database
+
+The server uses **SQLite** (file-based). The database file is `db/invoices.db`. Create the schema first by running `uv run python db/create_database.py` (or populate sample data with `db/populate_database.py`, which expects an existing database).
+
+**Tables:**
+
+| Table | Purpose |
+| --- | --- |
+| **customers** | Customer records: `id`, `name`, `address`, `email`, `phone` |
+| **invoices** | One row per invoice: `invoice_id`, `customer_id` (→ customers), `due_date`, `discount`, `tax`, `total_cost` |
+| **items** | Line items per invoice: `id`, `invoice_id` (→ invoices), `name`, `description`, `price`, `quantity` |
+
 ## MCP Tools
 
-- **get_invoices_for_customer** – Get all invoices for a customer by ID
-- **get_invoice_details** – Get full invoice details including line items by invoice ID
+The server registers the following tools (names are what MCP clients call):
+
+| Tool | Parameters | What it does |
+| --- | --- | --- |
+| **list_all_invoices** | _(none)_ | Returns every invoice as a list of objects with `invoice_id`, `customer_id`, `due_date`, `discount`, `tax`, `total_cost`, ordered by `invoice_id`. Use for scanning or filtering (e.g. overdue amounts) in the client. |
+| **get_invoices_for_customer** | `customer_id` (int) | Returns all invoices for that customer (same fields as above). |
+| **get_invoice_details** | `invoice_id` (int) | Returns `{ "invoice": ..., "items": [...] }` with full line items, or `null` if the invoice does not exist. |
+| **get_customer_by_id** | `customer_id` (int) | Returns customer fields (`name`, `email`, `phone`, `address`, etc.) or `{"error": "Customer … not found"}`. |
+| **send_notification** | `customer_id` (int), `customer_name` (str), `customer_email` (str), `amount` (float), `invoice_ids` (str) | Records an overdue-payment style notification. Appends a JSON object to `notifications_sent.json` in the project root and returns `{"status": "sent", ...}`. `invoice_ids` is a comma-separated list of invoice IDs as a single string. |
 
 ## Run the Server
 
@@ -45,10 +64,7 @@ uv run python mcp_server.py --http
 
 Agent that finds overdue invoices over $1000 and sends notifications to customers. Uses an LLM to decide which **MCP tools** to call (via `langchain-mcp-adapters`). Connects to the MCP server over **HTTP**.
 
-**MCP tools used:**
-- `get_overdue_invoices_over_1000` – Find overdue invoices > $1000
-- `get_customer_by_id` – Get customer contact details
-- `send_notification` – Send notification (logged to `notifications_sent.json`)
+**MCP tools used** (see table above): `list_all_invoices` (agent filters for overdue & amount), `get_customer_by_id`, `send_notification` (appends to `notifications_sent.json`).
 
 **Run (2 terminals):**
 

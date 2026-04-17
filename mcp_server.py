@@ -8,7 +8,6 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from db.create_database import create_database
 from db.read_database import (
     get_customer_by_id as fetch_customer_by_id,
     get_invoice_details as fetch_invoice_details,
@@ -19,9 +18,6 @@ from db.read_database import (
 
 mcp = FastMCP("Invoice Database", json_response=True)
 NOTIFICATIONS_LOG = Path(__file__).parent / "notifications_sent.json"
-
-# Ensure database and tables exist on startup
-create_database()
 
 
 @mcp.tool()
