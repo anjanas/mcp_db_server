@@ -3,7 +3,10 @@ Agent that handles invoice-related tasks.
 Uses an LLM to decide which MCP tools to call.
 Includes an agentic loop with LLM-as-judge: retries with feedback if the judge finds the result incorrect.
 
-Requires OPENAI_API_KEY environment variable (or .env file).
+Default LLM: local Llama 3.2 via Ollama (OpenAI-compatible API). Run `ollama pull llama3.2`
+and keep `ollama serve` listening (default http://127.0.0.1:11434). Override with LLM_BASE_URL,
+LLM_MODEL, LLM_API_KEY in the environment or .env.
+
 MCP server must be running with HTTP transport: uv run python mcp_server.py --http
 """
 import asyncio
@@ -28,6 +31,20 @@ NOTIFICATIONS_LOG = Path(__file__).parent / "notifications_sent.json"
 DEFAULT_MCP_URL = "http://127.0.0.1:8000/mcp"
 
 AGENT_TOOL_NAMES = {"list_all_invoices", "get_customer_by_id", "send_notification"}
+
+# Local Ollama defaults (OpenAI-compatible: POST /v1/chat/completions)
+_DEFAULT_LLM_BASE_URL = "http://127.0.0.1:11434/v1"
+_DEFAULT_LLM_MODEL = "llama3.2"
+_DEFAULT_LLM_API_KEY = "ollama"
+
+
+def _default_llm() -> ChatOpenAI:
+    """Chat model pointing at a local Llama 3.2 (default: Ollama)."""
+    base_url = os.environ.get("LLM_BASE_URL", _DEFAULT_LLM_BASE_URL)
+    model = os.environ.get("LLM_MODEL", _DEFAULT_LLM_MODEL)
+    api_key = os.environ.get("LLM_API_KEY", _DEFAULT_LLM_API_KEY)
+    return ChatOpenAI(model=model, base_url=base_url, api_key=api_key, temperature=0)
+
 
 def _get_agent_system_prompt() -> str:
     today = date.today().isoformat()
@@ -121,7 +138,7 @@ async def run_agent(tools=None, llm=None, task: str | None = None):
 
     Args:
         tools: Optional list of tools (for testing). If None, loads from MCP server.
-        llm: Optional LLM (for testing). If None, uses ChatOpenAI.
+        llm: Optional LLM (for testing). If None, uses local Llama 3.2 (Ollama-compatible).
         task: Optional task string. 
     """
     if tools is None:
@@ -134,7 +151,7 @@ async def run_agent(tools=None, llm=None, task: str | None = None):
         tools = [t for t in tools if t.name in AGENT_TOOL_NAMES]
 
     if llm is None:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        llm = _default_llm()
 
     agent = create_agent(llm, tools=tools, system_prompt=_get_agent_system_prompt())
     task = task
@@ -148,7 +165,7 @@ async def run_agent_with_judge_loop(tools=None, llm=None, task: str | None = Non
 
     Args:
         tools: Optional list of tools (for testing). If None, loads from MCP server.
-        llm: Optional LLM (for testing). If None, uses ChatOpenAI.
+        llm: Optional LLM (for testing). If None, uses local Llama 3.2 (Ollama-compatible).
         task: Task to send to the agent. If None, uses FIND_FUTURE_INVOICES_COUNT.
         max_attempts: Maximum number of attempts before giving up.
 
@@ -156,8 +173,8 @@ async def run_agent_with_judge_loop(tools=None, llm=None, task: str | None = Non
         Final agent result (last attempt). Includes judge_passed and judge_reason in result metadata.
     """
     if llm is None:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    judge_llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        llm = _default_llm()
+    judge_llm = _default_llm()
 
     task = task or FIND_FUTURE_INVOICES_COUNT
     base_task = task

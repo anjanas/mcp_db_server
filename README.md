@@ -73,11 +73,12 @@ Terminal 1 – start MCP server with HTTP:
 uv run python mcp_server.py --http
 ```
 
-Terminal 2 – run the agent:
+Terminal 2 – run the agent (default: **local Llama 3.2** via [Ollama](https://ollama.com); run `ollama pull llama3.2` and keep `ollama serve` on `http://127.0.0.1:11434`):
 ```bash
-export OPENAI_API_KEY=your-key-here
 uv run python agent.py
 ```
+
+Optional: `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` in `.env` to point at another OpenAI-compatible server.
 
 Override MCP URL: `MCP_SERVER_URL=http://localhost:8000/mcp uv run python agent.py`
 
