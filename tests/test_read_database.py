@@ -193,3 +193,35 @@ def test_get_overdue_invoices_respects_date_and_min_amount(test_db):
     assert high_ids == {1, 4}
     for row in high:
         assert row["total_cost"] >= 1000
+
+
+def test_list_overdue_invoices_grouped_by_days_late(test_db):
+    _path, _meta = test_db
+    groups = read_database.list_overdue_invoices_grouped_by_days_late()
+    # Invoices 1, 2, 4 share the same overdue due_date; invoice 3 is future
+    assert len(groups) == 1
+    dl = groups[0]["days_late"]
+    ids = {inv["invoice_id"] for inv in groups[0]["invoices"]}
+    assert ids == {1, 2, 4}
+    for inv in groups[0]["invoices"]:
+        assert inv["days_late"] == dl
+        assert inv["due_date"] == _meta["overdue"]
+
+
+def test_list_overdue_invoices_grouped_empty_when_none_overdue(tmp_path):
+    db_path = tmp_path / "only_future.db"
+    conn = sqlite3.connect(db_path)
+    _create_schema(conn)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO customers (id, name, address, email, phone) VALUES (1, 'A', '', '', '')"
+    )
+    future = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+    cursor.execute(
+        "INSERT INTO invoices (invoice_id, customer_id, due_date, discount, tax, total_cost) VALUES (1, 1, ?, 0, 0, 100.0)",
+        (future,),
+    )
+    conn.commit()
+    conn.close()
+    with patch.object(read_database, "DB_PATH", db_path):
+        assert read_database.list_overdue_invoices_grouped_by_days_late() == []

@@ -66,6 +66,8 @@ Agent that finds overdue invoices over $1000 and sends notifications to customer
 
 **MCP tools used** (see table above): `list_all_invoices` (agent filters for overdue & amount), `get_customer_by_id`, `send_notification` (appends to `notifications_sent.json`).
 
+**Models:** Development and testing were done with **`gpt-4o-mini`** (the default in `agent.py` for both the main agent and the judge). **Prompt 7** (overdue invoices grouped by days late—`uv run python agent.py 7`) is harder: it needs correct per-invoice date math and grouping. **`gpt-4o-mini` may fail or get inconsistent judge results** on that task; use a **stronger reasoning model** (e.g. **`o4-mini`**) for the agent and/or judge if you rely on prompt 7 in production.
+
 **Run (2 terminals):**
 
 Terminal 1 – start MCP server with HTTP:

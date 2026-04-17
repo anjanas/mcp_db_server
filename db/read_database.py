@@ -1,7 +1,10 @@
 """
 Read data from the invoices SQLite database.
 """
+import json
 import sqlite3
+from collections import defaultdict
+from datetime import date
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / "invoices.db"
@@ -115,6 +118,46 @@ def get_overdue_invoices(min_amount: float = 0):
     return [dict(row) for row in rows]
 
 
+def list_overdue_invoices_grouped_by_days_late():
+    """
+    Return overdue invoices grouped by how many full calendar days late they are.
+
+    Overdue means due_date is strictly before today's local calendar date (same idea as
+    comparing ISO dates to date.today()). Days late is (today - due_date).days in Python,
+    which avoids SQLite date('now')/julianday using UTC and disagreeing with local dates
+    by one day.
+
+    Returns:
+        List of dicts, each {"days_late": int, "invoices": list[dict]}.
+        Each invoice dict includes invoice fields plus "days_late".
+        Groups are sorted by days_late ascending; invoices within a group by invoice_id.
+    """
+    today = date.today()
+    today_str = today.isoformat()
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT invoice_id, customer_id, due_date, discount, tax, total_cost
+        FROM invoices
+        WHERE due_date < ?
+        ORDER BY invoice_id
+        """,
+        (today_str,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    groups: defaultdict[int, list] = defaultdict(list)
+    for row in rows:
+        d = dict(row)
+        due = date.fromisoformat(d["due_date"])
+        d["days_late"] = (today - due).days
+        groups[d["days_late"]].append(d)
+
+    return [{"days_late": dl, "invoices": groups[dl]} for dl in sorted(groups)]
+
+
 if __name__ == "__main__":
     print("=== All Customers ===")
     for c in list_all_customers():
@@ -133,3 +176,6 @@ if __name__ == "__main__":
     if details:
         print("Invoice:", details["invoice"])
         print("Items:", details["items"])
+
+    print("\n=== Overdue invoices grouped by days late ===")
+    print(json.dumps(list_overdue_invoices_grouped_by_days_late(), indent=2))

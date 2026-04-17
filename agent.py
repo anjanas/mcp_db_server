@@ -19,7 +19,7 @@ from langchain.agents import create_agent
 from langchain_mcp_adapters.sessions import StreamableHttpConnection
 from langchain_mcp_adapters.tools import load_mcp_tools
 
-from prompts import FIND_FUTURE_INVOICES_COUNT, FIND_OVERDUE_INVOICES_OVER_1000, PROMPTS
+from prompts import FIND_FUTURE_INVOICES_COUNT, PROMPTS
 
 load_dotenv(Path(__file__).parent / ".env")
 NOTIFICATIONS_LOG = Path(__file__).parent / "notifications_sent.json"
@@ -29,9 +29,23 @@ DEFAULT_MCP_URL = "http://127.0.0.1:8000/mcp"
 
 AGENT_TOOL_NAMES = {"list_all_invoices", "get_customer_by_id", "send_notification"}
 
+
+def _default_llm() -> ChatOpenAI:
+    """Default agent and judge: gpt-4o-mini."""
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+
 def _get_agent_system_prompt() -> str:
     today = date.today().isoformat()
-    return f"""Today's date is {today}. An overdue invoice is one whose due_date is before today's date (due_date < today). The payment deadline has passed and the customer has not paid. Use list_all_invoices to fetch invoices, then filter for those with due_date < today and total_cost >= 1000."""
+    return f"""Today's date is {today} (use ISO dates YYYY-MM-DD when comparing to due_date).
+
+Date rules for invoices:
+- Overdue: due_date is before today.
+- Not overdue yet: due_date is today or later.
+
+Follow the user's instructions exactly. Apply dollar thresholds, filters, grouping, counts, or notifications only when the task asks for them—do not add extra constraints (for example, do not assume a $1000 minimum unless the task says so).
+
+Use the available tools as needed: list_all_invoices to load invoice rows; get_customer_by_id for customer details; send_notification only when the task explicitly asks you to notify customers."""
 
 RATE_LIMIT_RETRIES = 5
 RATE_LIMIT_INITIAL_DELAY = 5.0  # seconds
@@ -64,6 +78,14 @@ Today's date is {today}.
 Definitions:
 - An overdue invoice has due_date < today (payment deadline has passed).
 - A future invoice has due_date >= today (not yet due).
+
+When the task asks to group overdue (late) invoices by how many full calendar days overdue they are, treat output in the following shape as valid formatting (example only—invoice ids, dates, dollar amounts, and "N days late" must match the tool data and today's date, not this sample):
+
+- **7 days late**
+  - Invoice ID: 4
+  - Customer ID: 6
+  - Due Date: 2026-04-09
+  - Total Cost: $117.35
 
 Evaluate whether the agent completed the TASK stated in the prompt. Do not assume the task—evaluate based on what the task actually asks for (e.g. counting future invoices, finding overdue ones, sending notifications, etc.).
 
@@ -103,9 +125,9 @@ async def _llm_judge(task: str, tools_available: list[str], tools_called: list[s
 Tools available: {', '.join(tools_available)}
 Tools the agent called: {', '.join(tools_called) or 'none'}
 
-Tool results (summary): {tool_results_summary[:1500]}
+Tool results (summary): {tool_results_summary}
 
-Agent's final response: {final_response[:500]}
+Agent's final response: {final_response}
 
 Did the agent complete the task correctly?"""
 
@@ -121,7 +143,7 @@ async def run_agent(tools=None, llm=None, task: str | None = None):
 
     Args:
         tools: Optional list of tools (for testing). If None, loads from MCP server.
-        llm: Optional LLM (for testing). If None, uses ChatOpenAI.
+        llm: Optional LLM (for testing). If None, uses gpt-4o-mini.
         task: Optional task string. 
     """
     if tools is None:
@@ -134,7 +156,7 @@ async def run_agent(tools=None, llm=None, task: str | None = None):
         tools = [t for t in tools if t.name in AGENT_TOOL_NAMES]
 
     if llm is None:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        llm = _default_llm()
 
     agent = create_agent(llm, tools=tools, system_prompt=_get_agent_system_prompt())
     task = task
@@ -148,7 +170,7 @@ async def run_agent_with_judge_loop(tools=None, llm=None, task: str | None = Non
 
     Args:
         tools: Optional list of tools (for testing). If None, loads from MCP server.
-        llm: Optional LLM (for testing). If None, uses ChatOpenAI.
+        llm: Optional LLM (for testing). If None, uses gpt-4o-mini.
         task: Task to send to the agent. If None, uses FIND_FUTURE_INVOICES_COUNT.
         max_attempts: Maximum number of attempts before giving up.
 
@@ -156,8 +178,10 @@ async def run_agent_with_judge_loop(tools=None, llm=None, task: str | None = Non
         Final agent result (last attempt). Includes judge_passed and judge_reason in result metadata.
     """
     if llm is None:
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    judge_llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        llm = _default_llm()
+        judge_llm = llm
+    else:
+        judge_llm = _default_llm()
 
     task = task or FIND_FUTURE_INVOICES_COUNT
     base_task = task
